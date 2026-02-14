@@ -9,6 +9,8 @@
 
 ---
 
+DEMO: [https://pomodoro.santiarias.com/](https://pomodoro.santiarias.com/)
+
 ## 📖 ¿Qué es Sudo Pomodoro?
 
 **Sudo Pomodoro** es un temporizador de técnica Pomodoro minimalista diseñado para programadores y personas que trabajan en entornos de desarrollo. La interfaz simula una terminal hacker con efectos de escaneo CRT, colores neón y una experiencia completamente inmersiva.
