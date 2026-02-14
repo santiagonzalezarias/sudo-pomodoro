@@ -73,6 +73,23 @@ const getQuote = (): string => {
     return quotesData[randomIndex];
 };
 
+// Browser API Safety Checks
+const isLocalStorageAvailable = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    try {
+        const testKey = '__localStorage_test__';
+        window.localStorage.setItem(testKey, 'test');
+        window.localStorage.removeItem(testKey);
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
+const isNotificationSupported = (): boolean => {
+    return typeof window !== 'undefined' && 'Notification' in window;
+};
+
 export default function DeepWorkTerminal() {
     // --- State ---
     const [timerState, setTimerState] = useState<TimerState>('WORK');
@@ -167,22 +184,28 @@ export default function DeepWorkTerminal() {
         setIsActive(false);
         playAlarm();
 
-        // Always try to send notification
-        if (Notification.permission === 'granted') {
-            new Notification('Sudo Pomodoro', {
-                body: 'Timer Complete! Time for next sequence.',
-                icon: '/favicon.ico'
-            });
-        } else if (Notification.permission === 'default') {
-            // Request permission and send notification if granted
-            Notification.requestPermission().then((permission) => {
-                if (permission === 'granted') {
+        // Always try to send notification (with safety check)
+        if (isNotificationSupported()) {
+            try {
+                if (Notification.permission === 'granted') {
                     new Notification('Sudo Pomodoro', {
                         body: 'Timer Complete! Time for next sequence.',
                         icon: '/favicon.ico'
                     });
+                } else if (Notification.permission === 'default') {
+                    // Request permission and send notification if granted
+                    Notification.requestPermission().then((permission) => {
+                        if (permission === 'granted') {
+                            new Notification('Sudo Pomodoro', {
+                                body: 'Timer Complete! Time for next sequence.',
+                                icon: '/favicon.ico'
+                            });
+                        }
+                    }).catch(err => console.log('Notification request failed:', err));
                 }
-            });
+            } catch (err) {
+                console.log('Notification error:', err);
+            }
         }
 
         const currentSettings = settingsRef.current;
@@ -277,41 +300,104 @@ export default function DeepWorkTerminal() {
 
     // Load from LocalStorage
     useEffect(() => {
-        const savedSettings = localStorage.getItem('dwt_settings');
-        const savedStats = localStorage.getItem('dwt_stats');
-        const savedUsername = localStorage.getItem('dwt_username');
-        const savedTasks = localStorage.getItem('dwt_tasks');
+        // Load saved data with safety checks
+        if (isLocalStorageAvailable()) {
+            try {
+                const savedSettings = localStorage.getItem('dwt_settings');
+                const savedStats = localStorage.getItem('dwt_stats');
+                const savedUsername = localStorage.getItem('dwt_username');
+                const savedTasks = localStorage.getItem('dwt_tasks');
 
-        if (savedSettings) setSettings(JSON.parse(savedSettings));
-        if (savedStats) setStats(JSON.parse(savedStats));
-        if (savedUsername) setUsername(savedUsername);
-        if (savedTasks) setTasks(JSON.parse(savedTasks));
-
-        addLog('SYSTEM', 'Terminal initialized.');
-        if (savedUsername) {
-            addLog('SYSTEM', `Welcome back, ${savedUsername}.`);
-        } else {
-            addLog('SYSTEM', 'USER NOT IDENTIFIED. PLEASE ENTER YOUR NAME.');
+                if (savedSettings) setSettings(JSON.parse(savedSettings));
+                if (savedStats) setStats(JSON.parse(savedStats));
+                if (savedUsername) setUsername(savedUsername);
+                if (savedTasks) setTasks(JSON.parse(savedTasks));
+            } catch (error) {
+                console.error('Error loading from localStorage:', error);
+            }
         }
 
-        // Request Notification Permission on Mount
-        if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
-            Notification.requestPermission().then((permission) => {
-                if (permission === 'granted') {
-                    addLog('SYSTEM', 'Notification access GRANTED.');
-                } else {
-                    addLog('SYSTEM', 'Notification access DENIED.');
+        // Delayed initialization logs to avoid hydration issues
+        setTimeout(() => {
+            addLog('SYSTEM', 'Terminal initialized.');
+            
+            if (isLocalStorageAvailable()) {
+                try {
+                    const savedUsername = localStorage.getItem('dwt_username');
+                    if (savedUsername) {
+                        addLog('SYSTEM', `Welcome back, ${savedUsername}.`);
+                    } else {
+                        addLog('SYSTEM', 'USER NOT IDENTIFIED. PLEASE ENTER YOUR NAME.');
+                    }
+                } catch (error) {
+                    addLog('SYSTEM', 'USER NOT IDENTIFIED. PLEASE ENTER YOUR NAME.');
                 }
-            });
-        }
+            } else {
+                addLog('SYSTEM', 'Warning: Storage unavailable. Progress will not be saved.');
+            }
+
+            // Request Notification Permission on Mount
+            if (isNotificationSupported()) {
+                try {
+                    if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+                        Notification.requestPermission().then((permission) => {
+                            if (permission === 'granted') {
+                                addLog('SYSTEM', 'Notification access GRANTED.');
+                            } else {
+                                addLog('SYSTEM', 'Notification access DENIED.');
+                            }
+                        }).catch(() => {
+                            addLog('SYSTEM', 'Notification access unavailable.');
+                        });
+                    }
+                } catch (error) {
+                    console.error('Notification API error:', error);
+                }
+            }
+        }, 100);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Save to LocalStorage
-    useEffect(() => { localStorage.setItem('dwt_settings', JSON.stringify(settings)); }, [settings]);
-    useEffect(() => { localStorage.setItem('dwt_stats', JSON.stringify(stats)); }, [stats]);
-    useEffect(() => { if (username) localStorage.setItem('dwt_username', username); }, [username]);
-    useEffect(() => { localStorage.setItem('dwt_tasks', JSON.stringify(tasks)); }, [tasks]);
+    // Save to LocalStorage (with safety checks)
+    useEffect(() => { 
+        if (isLocalStorageAvailable()) {
+            try {
+                localStorage.setItem('dwt_settings', JSON.stringify(settings));
+            } catch (err) {
+                console.error('Failed to save settings:', err);
+            }
+        }
+    }, [settings]);
+    
+    useEffect(() => { 
+        if (isLocalStorageAvailable()) {
+            try {
+                localStorage.setItem('dwt_stats', JSON.stringify(stats));
+            } catch (err) {
+                console.error('Failed to save stats:', err);
+            }
+        }
+    }, [stats]);
+    
+    useEffect(() => { 
+        if (username && isLocalStorageAvailable()) {
+            try {
+                localStorage.setItem('dwt_username', username);
+            } catch (err) {
+                console.error('Failed to save username:', err);
+            }
+        }
+    }, [username]);
+    
+    useEffect(() => { 
+        if (isLocalStorageAvailable()) {
+            try {
+                localStorage.setItem('dwt_tasks', JSON.stringify(tasks));
+            } catch (err) {
+                console.error('Failed to save tasks:', err);
+            }
+        }
+    }, [tasks]);
 
     // Timer Interval
     useEffect(() => {
